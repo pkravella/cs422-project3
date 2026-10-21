@@ -1,0 +1,6 @@
+.DS_Store
+.venv/
+__pycache__/
+results/smoke-*/
+cc/vmlinux.h
+cc/*.bpf.o
