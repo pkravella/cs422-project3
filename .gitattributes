@@ -1,0 +1,8 @@
+# Everything here runs on Linux (WSL2 or a VM), so check it out with LF
+# line endings even on Windows clones with core.autocrlf=true. A CRLF
+# shebang fails with "env: 'bash\r': No such file or directory".
+*.sh      text eol=lf
+Makefile  text eol=lf
+*.c       text eol=lf
+*.h       text eol=lf
+*.py      text eol=lf
