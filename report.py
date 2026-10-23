@@ -8,6 +8,9 @@ generate_report(), which:
     2. Computes min / median / mean / 95th-percentile goodput for each
        (destination, congestion control algorithm) pair, pooling all
        repetitions, and writes them to goodput_summary.csv and stdout.
+       Also computes the same four statistics per algorithm, pooling all
+       destinations, for both goodput and smoothed RTT, and writes them to
+       algorithm_summary.csv (Assignment 3: aggregate throughput and RTT).
     3. Plots goodput over time, one panel per destination, to
        goodput_over_time.pdf.
     4. Picks one representative destination and, for each algorithm,
@@ -41,6 +44,7 @@ logger = logging.getLogger(__name__)
 # File names inside a results directory.
 SAMPLES_FILE = "samples.csv"
 SUMMARY_FILE = "goodput_summary.csv"
+ALGORITHM_SUMMARY_FILE = "algorithm_summary.csv"
 GOODPUT_PLOT_FILE = "goodput_over_time.pdf"
 # One pair per algorithm; "{algorithm}" is replaced by its name.
 TIMESERIES_PLOT_FILE = "tcp_timeseries_{algorithm}.pdf"
@@ -70,6 +74,14 @@ AXIS_HEADROOM = 1.05
 SUMMARY_COLUMNS = [
     "host", "port", "algorithm", "samples",
     "min_mbps", "median_mbps", "mean_mbps", "p95_mbps",
+]
+
+# Columns of algorithm_summary.csv, in order. Goodput in Mbit/s, smoothed
+# RTT in milliseconds.
+ALGORITHM_SUMMARY_COLUMNS = [
+    "algorithm", "samples",
+    "min_mbps", "median_mbps", "mean_mbps", "p95_mbps",
+    "min_rtt_ms", "median_rtt_ms", "mean_rtt_ms", "p95_rtt_ms",
 ]
 
 # Digits after the decimal point when writing Mbit/s values.
@@ -234,6 +246,97 @@ def format_summary_table(rows):
             f"{destination:<{destination_width}}  {row['algorithm']:<9}  {row['samples']:>7}  "
             f"{row['min_mbps']:>8.2f}  {row['median_mbps']:>8.2f}  "
             f"{row['mean_mbps']:>8.2f}  {row['p95_mbps']:>8.2f}"
+        )
+    return "\n".join(lines)
+
+
+def summarize_by_algorithm(samples):
+    """Compute goodput and RTT statistics per algorithm, over all destinations.
+
+    Every sample of an algorithm is pooled: all destinations and all
+    repetitions. This answers "how did each algorithm do overall" in one
+    row, at the cost of mixing paths with very different capacities and
+    RTTs, so the per-destination table (summarize_goodput) is still needed
+    to explain where the differences come from.
+
+    The RTT is the kernel's smoothed RTT (tcpi_rtt) at each sample, not the
+    path's minimum RTT, so it includes any queueing the algorithm caused.
+
+    Args:
+        samples: list of sample dicts from load_samples.
+
+    Returns:
+        List of dicts with the keys in ALGORITHM_SUMMARY_COLUMNS, sorted by
+        algorithm name. Goodput in Mbit/s, RTT in milliseconds.
+    """
+    goodput_by_algorithm = {}
+    rtt_by_algorithm = {}
+    for sample in samples:
+        algorithm = sample["algorithm"]
+        if algorithm not in goodput_by_algorithm:
+            goodput_by_algorithm[algorithm] = []
+            rtt_by_algorithm[algorithm] = []
+        goodput_by_algorithm[algorithm].append(sample["goodput_mbps"])
+        rtt_by_algorithm[algorithm].append(sample["rtt_ms"])
+
+    rows = []
+    for algorithm in sorted(goodput_by_algorithm):
+        goodputs = goodput_by_algorithm[algorithm]
+        rtts = rtt_by_algorithm[algorithm]
+        rows.append({
+            "algorithm": algorithm,
+            "samples": len(goodputs),
+            "min_mbps": min(goodputs),
+            "median_mbps": statistics.median(goodputs),
+            "mean_mbps": statistics.mean(goodputs),
+            "p95_mbps": percentile_95(goodputs),
+            "min_rtt_ms": min(rtts),
+            "median_rtt_ms": statistics.median(rtts),
+            "mean_rtt_ms": statistics.mean(rtts),
+            "p95_rtt_ms": percentile_95(rtts),
+        })
+    return rows
+
+
+def write_algorithm_summary(rows, path):
+    """Write per-algorithm summary rows to a CSV file, rounding values.
+
+    Args:
+        rows: list of dicts from summarize_by_algorithm.
+        path: CSV file to create (overwritten if it exists).
+    """
+    with open(path, "w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=ALGORITHM_SUMMARY_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            rounded_row = dict(row)
+            for column in ALGORITHM_SUMMARY_COLUMNS[2:]:
+                rounded_row[column] = round(row[column], SUMMARY_DECIMALS)
+            writer.writerow(rounded_row)
+
+
+def format_algorithm_summary_table(rows):
+    """Format per-algorithm summary rows as an aligned text table.
+
+    Args:
+        rows: list of dicts from summarize_by_algorithm.
+
+    Returns:
+        The table as one multi-line string.
+    """
+    header = (
+        f"{'algorithm':<9}  {'samples':>7}  "
+        f"{'min':>8}  {'median':>8}  {'mean':>8}  {'p95':>8}  (Mbit/s)   "
+        f"{'min':>7}  {'median':>7}  {'mean':>7}  {'p95':>7}  (RTT ms)"
+    )
+    lines = [header, "-" * len(header)]
+    for row in rows:
+        lines.append(
+            f"{row['algorithm']:<9}  {row['samples']:>7}  "
+            f"{row['min_mbps']:>8.2f}  {row['median_mbps']:>8.2f}  "
+            f"{row['mean_mbps']:>8.2f}  {row['p95_mbps']:>8.2f}             "
+            f"{row['min_rtt_ms']:>7.2f}  {row['median_rtt_ms']:>7.2f}  "
+            f"{row['mean_rtt_ms']:>7.2f}  {row['p95_rtt_ms']:>7.2f}"
         )
     return "\n".join(lines)
 
@@ -661,7 +764,8 @@ def generate_report(results_dir, representative=None):
 
     Args:
         results_dir: directory containing samples.csv. Outputs are written
-            next to it (goodput_summary.csv, goodput_over_time.pdf, and the
+            next to it (goodput_summary.csv, algorithm_summary.csv,
+            goodput_over_time.pdf, and the
             tcp_timeseries_* / tcp_scatter_* PDFs).
         representative: (host, port) for the TCP stats plots, or None to
             pick one automatically (see plot_tcp_stats).
@@ -683,6 +787,12 @@ def generate_report(results_dir, representative=None):
     write_summary(rows, summary_path)
     print(format_summary_table(rows))
     logger.info("wrote %s", summary_path)
+
+    algorithm_rows = summarize_by_algorithm(samples)
+    algorithm_summary_path = os.path.join(results_dir, ALGORITHM_SUMMARY_FILE)
+    write_algorithm_summary(algorithm_rows, algorithm_summary_path)
+    print(format_algorithm_summary_table(algorithm_rows))
+    logger.info("wrote %s", algorithm_summary_path)
 
     plot_path = os.path.join(results_dir, GOODPUT_PLOT_FILE)
     plot_goodput_over_time(samples, plot_path)
@@ -766,6 +876,20 @@ if __name__ == "__main__":
         assert summary[2]["mean_mbps"] == 25
 
         assert os.path.getsize(os.path.join(temp_dir, SUMMARY_FILE)) > 0
+
+        # Per-algorithm summary pools both destinations: cubic has
+        # a.example 1..5 and b.example 20, 30; every RTT is 20 ms.
+        algorithm_summary = summarize_by_algorithm(
+            load_samples(os.path.join(temp_dir, SAMPLES_FILE)))
+        assert [row["algorithm"] for row in algorithm_summary] == ["cubic", "reno"]
+        cubic_row = algorithm_summary[0]
+        assert cubic_row["samples"] == 7
+        assert cubic_row["min_mbps"] == 1
+        assert cubic_row["median_mbps"] == 4
+        assert abs(cubic_row["mean_mbps"] - 65 / 7) < 1e-9
+        assert cubic_row["median_rtt_ms"] == 20
+        assert cubic_row["p95_rtt_ms"] == 20
+        assert os.path.getsize(os.path.join(temp_dir, ALGORITHM_SUMMARY_FILE)) > 0
         assert os.path.getsize(os.path.join(temp_dir, GOODPUT_PLOT_FILE)) > 0
 
         # a.example is the only destination with both algorithms. Its axis

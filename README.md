@@ -33,7 +33,7 @@ code (`iperf3_client.py`, `destinations.py`, `run_experiments.py`,
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python run_experiments.py listed_iperf3_servers.csv \
-    -n 10 --duration 10 --interval 1 --repetitions 3 \
+    -n 10 --duration 10 --interval 0.2 --repetitions 3 --seed 422 \
     --algorithms cs422cc cubic reno bbr
 ```
 
