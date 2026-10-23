@@ -2,7 +2,7 @@
 title: "CS 422 Assignment 3: TCP Congestion Control Implementation (Option 1: eBPF)"
 author:
   - Thanh Bui Minh (tbuiminh)
-  - Aaron Gupta (gupt1066)
+  - Aaruni Gupta (gupt1066)
   - Rishiraj Behki (rbehki)
   - Pranith Ravella (pravella)
   - Colin Hermack (chermack)
@@ -25,6 +25,13 @@ If the code changes, re-pin them to the new commit and re-check every range.
 -->
 
 Repository: <https://github.com/pkravella/cs422-project3>
+
+## AI tools acknowledgement
+
+OpenAI Codex and Anthropic Claude were used to generate complete sections
+of code, stress-test the implementation, run the measurement campaign, and
+draft and polish this report. All AI-generated work was reviewed and
+verified by the group.
 
 We implemented the algorithm from our Assignment 2, Question 3(b) design,
 **Delay-Gated Loss (DGL)**, as an eBPF `struct_ops` program registered
@@ -458,10 +465,3 @@ time. To rebuild the summaries and plots from saved data:
 The report is built from the repository root with
 `pandoc report/report.md -o report/report.pdf` (needs pandoc and a LaTeX
 distribution).
-
-# Use of AI tools
-
-OpenAI Codex and Anthropic Claude were used to generate complete sections
-of code, stress-test the implementation, run the measurement campaign, and
-draft and polish this report. All AI-generated work was reviewed and
-verified by the group.
